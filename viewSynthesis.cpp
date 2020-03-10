@@ -31,7 +31,22 @@ struct Point2d
 	Point2d(double x_, double y_) :x(x_), y(y_) {}
 };
 
-void interpolate(Color &pixel, int x, int y, double alpha, double beta, Bitmap topLeft, Bitmap topRight, Bitmap botLeft, Bitmap botRight) {
+// Get the intersection of the view plane and the ray from the new viewpoint
+Point2d getIntersection(Point3d viewpoint, Point2d imagePlane, double focalLength) {
+    double t = viewpoint.z / focalLength;
+    return {viewpoint.x + t * imagePlane.x, viewpoint.y + t * imagePlane.y};
+}
+
+// Convert from pixel index to image coordinate
+inline Point2d pixelTo2d(int x, int y) { return {x * 34 / 511.0 - 17, y * 34 / 511.0 - 17}; }
+
+// Convert the coordinate of view plane to index of viewImageList
+// Subtract from 72 because (0, 0) is at bottom left corner
+inline int gridToIndex(int s, int t) { return 72 - t * 9 + s; }
+
+// Bilinear interpolation
+void interpolate(Color &pixel, int x, int y, double alpha, double beta, Bitmap topLeft, Bitmap topRight, Bitmap botLeft,
+                 Bitmap botRight) {
     unsigned char p1[3], p2[3], p[3], topLeftRGB[3], topRightRGB[3], botLeftRGB[3], botRightRGB[3];
     topLeft.getColor(x, y, topLeftRGB[0], topLeftRGB[1], topLeftRGB[2]);
     topRight.getColor(x, y, topRightRGB[0], topRightRGB[1], topRightRGB[2]);
@@ -49,9 +64,6 @@ void interpolate(Color &pixel, int x, int y, double alpha, double beta, Bitmap t
     pixel.B = p[2];
 }
 
-// Subtract from 72 because (0, 0) is at bottom left corner
-inline int gridToIndex(int s, int t) { return 72 - t * 9 + s; }
-
 void getNeighbourRays(Point2d viewPlane, double &alpha, double &beta, int &topLeft, int &topRight, int &botLeft,
                       int &botRight) {
     double x = viewPlane.x, y = viewPlane.y;
@@ -63,17 +75,8 @@ void getNeighbourRays(Point2d viewPlane, double &alpha, double &beta, int &topLe
     topRight = gridToIndex(right, top);
     botLeft = gridToIndex(left, bottom);
     botRight = gridToIndex(right, bottom);
-    alpha = modf(x, &x);
+    alpha = modf(x, &x); // Extract the decimal part
     beta = modf(y, &y);
-}
-
-Point2d getIntersection(Point3d viewpoint, Point2d imagePlane, double focalLength) {
-    double t = viewpoint.z / focalLength;
-    return {viewpoint.x + t * imagePlane.x, viewpoint.y + t * imagePlane.y};
-}
-
-inline Point2d pixelTo2d(int x, int y) {
-    return {x * 34 / 511.0 - 17, y * 34 / 511.0 - 17};
 }
 
 int main(int argc, char** argv)
@@ -111,7 +114,7 @@ int main(int argc, char** argv)
 	{
 		for (int c = 0; c < Resolution_Col; c++)
 		{
-		    Color pixel;
+		    Color pixel{};
 		    Point2d imagePlane = pixelTo2d(c, r);
             Point2d intersection = getIntersection(viewpoint, imagePlane, targetFocalLen);
 
