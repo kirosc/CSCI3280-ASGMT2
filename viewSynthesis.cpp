@@ -31,7 +31,7 @@ struct Point2d
 	Point2d(double x_, double y_) :x(x_), y(y_) {}
 };
 
-void interpolate(Point3d &point, int x, int y, double alpha, double beta, Bitmap topLeft, Bitmap topRight, Bitmap botLeft, Bitmap botRight) {
+void interpolate(Color &pixel, int x, int y, double alpha, double beta, Bitmap topLeft, Bitmap topRight, Bitmap botLeft, Bitmap botRight) {
     unsigned char p1[3], p2[3], p[3], topLeftRGB[3], topRightRGB[3], botLeftRGB[3], botRightRGB[3];
     topLeft.getColor(x, y, topLeftRGB[0], topLeftRGB[1], topLeftRGB[2]);
     topRight.getColor(x, y, topRightRGB[0], topRightRGB[1], topRightRGB[2]);
@@ -44,18 +44,19 @@ void interpolate(Point3d &point, int x, int y, double alpha, double beta, Bitmap
         p[i] = (1.0 - beta) * p1[i] + beta * p2[i];
     }
 
-    point.x = p[0];
-    point.y = p[1];
-    point.z = p[2];
+    pixel.R = p[0];
+    pixel.G = p[1];
+    pixel.B = p[2];
 }
 
 // Subtract from 72 because (0, 0) is at bottom left corner
 inline int gridToIndex(int s, int t) { return 72 - t * 9 + s; }
 
-void getNeighbourRays(double x, double y, double &alpha, double &beta, int &topLeft, int &topRight, int &botLeft,
+void getNeighbourRays(Point2d viewPlane, double &alpha, double &beta, int &topLeft, int &topRight, int &botLeft,
                       int &botRight) {
-    x = (x + 120) / 30.0;
-    y = (y + 120) / 30.0;
+    double x = viewPlane.x, y = viewPlane.y;
+    x = (x + 120) / Baseline;
+    y = (y + 120) / Baseline;
     int left = floor(x), right = ceil(x), top = ceil(y), bottom = floor(y);
 
     topLeft = gridToIndex(left, top);
@@ -66,10 +67,18 @@ void getNeighbourRays(double x, double y, double &alpha, double &beta, int &topL
     beta = modf(y, &y);
 }
 
+Point2d getIntersection(Point3d viewpoint, Point2d imagePlane, double focalLength) {
+    double t = viewpoint.z / focalLength;
+    return {viewpoint.x + t * imagePlane.x, viewpoint.y + t * imagePlane.y};
+}
+
+inline Point2d pixelTo2d(int x, int y) {
+    return {x * 34 / 511.0 - 17, y * 34 / 511.0 - 17};
+}
 
 int main(int argc, char** argv)
 {
-	if (argc != 6)
+    if (argc != 6)
 	{
 		cout << "Arguments prompt: viewSynthesis.exe <LF_dir> <X Y Z> <focal_length>" << endl;
 		return 0;
@@ -83,10 +92,7 @@ int main(int argc, char** argv)
 	    return 0;
 	}
 
-	double alpha, beta;
-    int topLeft, topRight, botLeft, botRight;
-    getNeighbourRays(Vx, Vy, alpha, beta, topLeft, topRight, botLeft, botRight);
-
+    Point3d viewpoint(Vx, Vy, Vz);
 	vector<Bitmap> viewImageList;
 	//! loading light field views
 	for (int i = 0; i < View_Grid_Col*View_Grid_Row; i++)
@@ -105,14 +111,21 @@ int main(int argc, char** argv)
 	{
 		for (int c = 0; c < Resolution_Col; c++)
 		{
-			Point3d rayRGB(0, 0, 0);
-			//! resample the pixel value of this ray: TODO
-            interpolate(rayRGB, c, r, alpha, beta, viewImageList[topLeft], viewImageList[topRight], viewImageList[botLeft],
-                        viewImageList[botRight]);
+		    Color pixel;
+		    Point2d imagePlane = pixelTo2d(c, r);
+            Point2d intersection = getIntersection(viewpoint, imagePlane, targetFocalLen);
 
+            if (intersection.x > 120 || intersection.x < -120 || intersection.y > 120 || intersection.y < -120) {
+                pixel.R = pixel.G = pixel.B = 0;
+            } else {
+                double alpha, beta;
+                int topLeft, topRight, botLeft, botRight;
+                getNeighbourRays(intersection, alpha, beta, topLeft, topRight, botLeft, botRight);
+                interpolate(pixel, c, r, alpha, beta, viewImageList[topLeft], viewImageList[topRight], viewImageList[botLeft],
+                            viewImageList[botRight]);
+            }
 			//! record the resampled pixel value
-            targetView.setColor(c, r, (unsigned char) rayRGB.x, (unsigned char) rayRGB.y, (unsigned char) rayRGB.z);
-//			targetView.setColor(c, r, unsigned char(rayRGB.x), unsigned char(rayRGB.y), unsigned char(rayRGB.z));
+            targetView.setColor(c, r, pixel.R, pixel.G, pixel.B);
 		}
 	}
 	string savePath = "newView.bmp";
